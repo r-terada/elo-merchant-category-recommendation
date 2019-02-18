@@ -506,8 +506,7 @@ def kfold_lightgbm(train_df, test_df, num_folds, stratified=False, debug=False):
         test_df[['card_id', 'target']].to_csv(submission_file_name, index=False)
 
 
-def main(debug=False):
-    num_rows = 10000 if debug else None
+def create_features(num_rows=None):
     with timer("train & test"):
         df = train_test(num_rows)
     with timer("historical transactions"):
@@ -522,6 +521,35 @@ def main(debug=False):
         del df
         gc.collect()
 
+    return train_df, test_df
+
+
+def get_features(debug):
+    num_rows = 10000 if debug else None
+
+    cache_dir = "../data/cache"
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
+
+    train_path = os.path.join(cache_dir, "train_features.pkl")
+    test_path = os.path.join(cache_dir, "test_features.pkl")
+
+    if debug:
+        return create_features(num_rows)
+    else:
+        if (os.path.exists(train_path) and os.path.exists(test_path)):
+            train_df = pd.read_pickle(train_path)
+            test_df = pd.read_pickle(test_path)
+        else:
+            train_df, test_df = create_features(num_rows)
+            train_df.to_pickle(train_path)
+            test_df.to_pickle(test_path)
+
+    return train_df, test_df
+
+
+def main(debug=False):
+    train_df, test_df = get_features(debug)
     with timer("Run LightGBM with kfold"):
         kfold_lightgbm(train_df, test_df, num_folds=11, stratified=False, debug=debug)
 

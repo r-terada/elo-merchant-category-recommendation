@@ -15,6 +15,13 @@ from contextlib import contextmanager
 from pandas.core.common import SettingWithCopyWarning
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.externals.joblib import memory
+
+
+cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../data/cache')
+if not os.path.exists(cache_dir):
+    os.makedirs(cache_dir)
+mem = memory.Memory(location=cache_dir, verbose=1)
 
 warnings.simplefilter(action='ignore', category=SettingWithCopyWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -87,6 +94,7 @@ def reduce_mem_usage(df, verbose=True):
     return df
 
 
+@mem.cache
 def train_test(num_rows=None):
 
     # load csv
@@ -141,6 +149,7 @@ def train_test(num_rows=None):
 # preprocessing historical transactions
 
 
+@mem.cache
 def historical_transactions(num_rows=None):
     # load csv
     hist_df = pd.read_csv('../data/input/historical_transactions.csv.zip', nrows=num_rows)
@@ -259,6 +268,7 @@ def historical_transactions(num_rows=None):
 # preprocessing new_merchant_transactions
 
 
+@mem.cache
 def new_merchant_transactions(num_rows=None):
     # load csv
     new_merchant_df = pd.read_csv('../data/input/new_merchant_transactions.csv.zip', nrows=num_rows)
@@ -365,7 +375,7 @@ def new_merchant_transactions(num_rows=None):
 
 # additional features
 
-
+@mem.cache
 def additional_features(df):
     df['hist_first_buy'] = (df['hist_purchase_date_min'] - df['first_active_month']).dt.days
     df['hist_last_buy'] = (df['hist_purchase_date_max'] - df['first_active_month']).dt.days
@@ -425,7 +435,7 @@ def opt(train_df, test_df, num_folds, stratified=False, debug=False):
         'learning_rate': hp.quniform("learning_rate", 0.01, 0.02, 0.001),
         'subsample': hp.quniform("subsample", 0.1, 1.0, 0.01),
         'max_depth': hp.quniform("max_depth", 4, 12, 1),
-        'top_rate': hp.quniform("top_rate", 0.01, 1.0, 0.01),
+        'top_rate': hp.quniform("top_rate", 0.01, 0.99, 0.01),
         'num_leaves': hp.quniform("num_leaves", 16, 256, 1),
         'min_child_weight': hp.quniform("min_child_weight", 1.0, 100.0, 0.1),
         "reg_alpha": hp.quniform("reg_alpha", 0, 100, 0.1),
@@ -443,6 +453,7 @@ def opt(train_df, test_df, num_folds, stratified=False, debug=False):
         opt_idx += 1
         # Create arrays and dataframes to store results
         oof_preds = np.zeros(train_df.shape[0])
+        sub_preds = np.zeros(test_df.shape[0])
         feats = [f for f in train_df.columns if f not in FEATS_EXCLUDED]
 
         # k-fold
@@ -492,6 +503,8 @@ def opt(train_df, test_df, num_folds, stratified=False, debug=False):
             )
 
             oof_preds[valid_idx] = reg.predict(valid_x, num_iteration=reg.best_iteration)
+            sub_preds += reg.predict(test_df[feats], num_iteration=reg.best_iteration) / folds.n_splits
+
             del reg, train_x, train_y, valid_x, valid_y
             gc.collect()
 
@@ -505,6 +518,10 @@ def opt(train_df, test_df, num_folds, stratified=False, debug=False):
         oof_df = train_df.copy().reset_index()
         oof_df['target'] = oof_preds
         oof_df[['card_id', 'target']].to_csv(os.path.join(out_dir, f"oof.csv"), index=False)
+
+        submission = test_df.copy().reset_index()
+        submission['target'] = sub_preds
+        submission[['card_id', 'target']].to_csv(os.path.join(out_dir, f"submission.csv"), index=False)
 
         with open(os.path.join(out_dir, "params.json"), "w") as fp:
             json.dump(params, fp, indent=2)
@@ -525,6 +542,7 @@ def opt(train_df, test_df, num_folds, stratified=False, debug=False):
 
 def main(debug=False):
     num_rows = 10000 if debug else None
+
     with timer("train & test"):
         df = train_test(num_rows)
     with timer("historical transactions"):
@@ -538,7 +556,6 @@ def main(debug=False):
         test_df = df[df['target'].isnull()]
         del df
         gc.collect()
-
     with timer("Run LightGBM with kfold"):
         opt(train_df, test_df, num_folds=11, stratified=False, debug=debug)
 
