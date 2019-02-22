@@ -41,7 +41,7 @@ def stacking(train_df, test_df, save=True, verbose_fold=True):
     print(f'ALL RMSE: {score}')
 
     if save:
-        out_dir = ("../data/output/satcking")
+        out_dir = ("../data/output/stacking")
         if not os.path.exists(out_dir):
             os.makedirs(out_dir)
 

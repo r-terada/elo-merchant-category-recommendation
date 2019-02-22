@@ -13,6 +13,13 @@ from contextlib import contextmanager
 from pandas.core.common import SettingWithCopyWarning
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.externals.joblib import memory
+
+
+cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../data/cache')
+if not os.path.exists(cache_dir):
+    os.makedirs(cache_dir)
+mem = memory.Memory(location=cache_dir, verbose=1)
 
 warnings.simplefilter(action='ignore', category=SettingWithCopyWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -95,6 +102,7 @@ def reduce_mem_usage(df, verbose=True):
 # preprocessing train & test
 
 
+@mem.cache
 def train_test(num_rows=None):
 
     # load csv
@@ -121,7 +129,13 @@ def train_test(num_rows=None):
 
     # datetime features
     df['quarter'] = df['first_active_month'].dt.quarter
-    df['elapsed_time'] = (datetime.datetime.today() - df['first_active_month']).dt.days
+    df['elapsed_time'] = (datetime.datetime(2019, 1, 20, 0, 0) - df['first_active_month']).dt.days
+    # df['first_month'] = df['first_active_month'].dt.month
+    # df['first_day'] = df['first_active_month'].dt.day
+    # df['first_hour'] = df['first_active_month'].dt.hour
+    # df['first_weekofyear'] = df['first_active_month'].dt.weekofyear
+    # df['first_weekday'] = df['first_active_month'].dt.weekday
+    # df['first_weekend'] = (df['first_active_month'].dt.weekday >= 5).astype(int)
 
     df['days_feature1'] = df['elapsed_time'] * df['feature_1']
     df['days_feature2'] = df['elapsed_time'] * df['feature_2']
@@ -139,6 +153,13 @@ def train_test(num_rows=None):
         df[f] = df[f].map(order_label)
 
     df['feature_sum'] = df['feature_1'] + df['feature_2'] + df['feature_3']
+    # df['feature1_plus_feature2'] = df['feature_1'] + df['feature_2']
+    # df['feature1_plus_feature3'] = df['feature_1'] + df['feature_3']
+    # df['feature2_plus_feature3'] = df['feature_2'] + df['feature_3']
+    df['feature_product'] = df['feature_1'] * df['feature_2'] * df['feature_3']
+    # df['feature1_mul_feature2'] = df['feature_1'] * df['feature_2']
+    # df['feature1_mul_feature3'] = df['feature_1'] * df['feature_3']
+    # df['feature2_mul_feature3'] = df['feature_2'] * df['feature_3']
     df['feature_mean'] = df['feature_sum']/3
     df['feature_max'] = df[['feature_1', 'feature_2', 'feature_3']].max(axis=1)
     df['feature_min'] = df[['feature_1', 'feature_2', 'feature_3']].min(axis=1)
@@ -149,6 +170,7 @@ def train_test(num_rows=None):
 # preprocessing historical transactions
 
 
+@mem.cache
 def historical_transactions(num_rows=None):
     # load csv
     hist_df = pd.read_csv('../data/input/historical_transactions.csv.zip', nrows=num_rows)
@@ -197,7 +219,7 @@ def historical_transactions(num_rows=None):
     # Mothers Day: May 13 2018
     hist_df['Mothers_Day_2018'] = (pd.to_datetime('2018-05-13')-hist_df['purchase_date']).dt.days.apply(lambda x: x if x > 0 and x < 100 else 0)
 
-    hist_df['month_diff'] = ((datetime.datetime.today() - hist_df['purchase_date']).dt.days)//30
+    hist_df['month_diff'] = ((datetime.datetime(2019, 1, 20, 0, 0) - hist_df['purchase_date']).dt.days)//30
     hist_df['month_diff'] += hist_df['month_lag']
 
     # additional features
@@ -256,8 +278,8 @@ def historical_transactions(num_rows=None):
 
     hist_df['hist_purchase_date_diff'] = (hist_df['hist_purchase_date_max']-hist_df['hist_purchase_date_min']).dt.days
     hist_df['hist_purchase_date_average'] = hist_df['hist_purchase_date_diff']/hist_df['hist_card_id_size']
-    hist_df['hist_purchase_date_uptonow'] = (datetime.datetime.today()-hist_df['hist_purchase_date_max']).dt.days
-    hist_df['hist_purchase_date_uptomin'] = (datetime.datetime.today()-hist_df['hist_purchase_date_min']).dt.days
+    hist_df['hist_purchase_date_uptonow'] = (datetime.datetime(2019, 1, 20, 0, 0)-hist_df['hist_purchase_date_max']).dt.days
+    hist_df['hist_purchase_date_uptomin'] = (datetime.datetime(2019, 1, 20, 0, 0)-hist_df['hist_purchase_date_min']).dt.days
 
     # reduce memory usage
     hist_df = reduce_mem_usage(hist_df)
@@ -267,6 +289,7 @@ def historical_transactions(num_rows=None):
 # preprocessing new_merchant_transactions
 
 
+@mem.cache
 def new_merchant_transactions(num_rows=None):
     # load csv
     new_merchant_df = pd.read_csv('../data/input/new_merchant_transactions.csv.zip', nrows=num_rows)
@@ -308,7 +331,7 @@ def new_merchant_transactions(num_rows=None):
     # Mothers Day: May 13 2018
     new_merchant_df['Mothers_Day_2018'] = (pd.to_datetime('2018-05-13')-new_merchant_df['purchase_date']).dt.days.apply(lambda x: x if x > 0 and x < 100 else 0)
 
-    new_merchant_df['month_diff'] = ((datetime.datetime.today() - new_merchant_df['purchase_date']).dt.days)//30
+    new_merchant_df['month_diff'] = ((datetime.datetime(2019, 1, 20, 0, 0) - new_merchant_df['purchase_date']).dt.days)//30
     new_merchant_df['month_diff'] += new_merchant_df['month_lag']
 
     # additional features
@@ -363,17 +386,16 @@ def new_merchant_transactions(num_rows=None):
 
     new_merchant_df['new_purchase_date_diff'] = (new_merchant_df['new_purchase_date_max']-new_merchant_df['new_purchase_date_min']).dt.days
     new_merchant_df['new_purchase_date_average'] = new_merchant_df['new_purchase_date_diff']/new_merchant_df['new_card_id_size']
-    new_merchant_df['new_purchase_date_uptonow'] = (datetime.datetime.today()-new_merchant_df['new_purchase_date_max']).dt.days
-    new_merchant_df['new_purchase_date_uptomin'] = (datetime.datetime.today()-new_merchant_df['new_purchase_date_min']).dt.days
+    new_merchant_df['new_purchase_date_uptonow'] = (datetime.datetime(2019, 1, 20, 0, 0)-new_merchant_df['new_purchase_date_max']).dt.days
+    new_merchant_df['new_purchase_date_uptomin'] = (datetime.datetime(2019, 1, 20, 0, 0)-new_merchant_df['new_purchase_date_min']).dt.days
 
     # reduce memory usage
     new_merchant_df = reduce_mem_usage(new_merchant_df)
 
     return new_merchant_df
 
+
 # additional features
-
-
 def additional_features(df):
     df['hist_first_buy'] = (df['hist_purchase_date_min'] - df['first_active_month']).dt.days
     df['hist_last_buy'] = (df['hist_purchase_date_max'] - df['first_active_month']).dt.days
@@ -422,7 +444,7 @@ def additional_features(df):
 # LightGBM GBDT with KFold or Stratified KFold
 
 
-def kfold_lightgbm(train_df, test_df, num_folds, stratified=False, debug=False):
+def kfold_lightgbm(train_df, test_df, num_folds, out_dir_name, stratified=False, debug=False):
     print("Starting LightGBM. Train shape: {}, test shape: {}".format(train_df.shape, test_df.shape))
 
     # Cross validation model
@@ -496,17 +518,26 @@ def kfold_lightgbm(train_df, test_df, num_folds, stratified=False, debug=False):
         del reg, train_x, train_y, valid_x, valid_y
         gc.collect()
 
-    # display importances
     display_importances(feature_importance_df)
+    score = rmse(train_df['target'], oof_preds)
+    print(f"==== ALL RMSE: {score} ====")
+    out_dir_base = "../data/output"
+    out_dir = os.path.join(out_dir_base, f"{out_dir_name}_{score}")
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
 
-    if not debug:
-        # save submission file
-        test_df.loc[:, 'target'] = sub_preds
-        test_df = test_df.reset_index()
-        test_df[['card_id', 'target']].to_csv(submission_file_name, index=False)
+    oof_df = train_df.copy().reset_index()
+    oof_df['target'] = oof_preds
+    oof_df[['card_id', 'target']].to_csv(os.path.join(out_dir, f"oof.csv"), index=False)
+
+    submission = test_df.copy().reset_index()
+    submission['target'] = sub_preds
+    submission[['card_id', 'target']].to_csv(os.path.join(out_dir, f"submission.csv"), index=False)
 
 
-def create_features(num_rows=None):
+def main(debug=False):
+    num_rows = 10000 if debug else None
+
     with timer("train & test"):
         df = train_test(num_rows)
     with timer("historical transactions"):
@@ -521,37 +552,13 @@ def create_features(num_rows=None):
         del df
         gc.collect()
 
-    return train_df, test_df
+    # train_df.to_pickle("./train_df.pkl")
+    # test_df.to_pickle("./test_df.pkl")
+    # import sys
+    # sys.exit(1)
 
-
-def get_features(debug):
-    num_rows = 10000 if debug else None
-
-    cache_dir = "../data/cache"
-    if not os.path.exists(cache_dir):
-        os.makedirs(cache_dir)
-
-    train_path = os.path.join(cache_dir, "train_features.pkl")
-    test_path = os.path.join(cache_dir, "test_features.pkl")
-
-    if debug:
-        return create_features(num_rows)
-    else:
-        if (os.path.exists(train_path) and os.path.exists(test_path)):
-            train_df = pd.read_pickle(train_path)
-            test_df = pd.read_pickle(test_path)
-        else:
-            train_df, test_df = create_features(num_rows)
-            train_df.to_pickle(train_path)
-            test_df.to_pickle(test_path)
-
-    return train_df, test_df
-
-
-def main(debug=False):
-    train_df, test_df = get_features(debug)
     with timer("Run LightGBM with kfold"):
-        kfold_lightgbm(train_df, test_df, num_folds=11, stratified=False, debug=debug)
+        kfold_lightgbm(train_df, test_df, out_dir_name="20190221_0008_fix_date_remove_my_features", num_folds=11, stratified=False, debug=debug)
 
 
 if __name__ == "__main__":
