@@ -20,10 +20,14 @@ from features import train_test, historical_transactions, new_merchant_transacti
 warnings.simplefilter(action='ignore', category=SettingWithCopyWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
+with open("../data/misc/split_corr_under_threshold_99.txt", "r") as fp:
+    line = fp.read()
+    features_to_be_excluded = eval(line)
+
 FEATS_EXCLUDED = ['first_active_month', 'target', 'card_id', 'outliers',
                   'hist_purchase_date_max', 'hist_purchase_date_min', 'hist_card_id_size',
                   'new_purchase_date_max', 'new_purchase_date_min', 'new_card_id_size',
-                  'OOF_PRED', 'month_0']
+                  'OOF_PRED', 'month_0'] #  + features_to_be_excluded
 
 
 @contextmanager
@@ -49,8 +53,6 @@ def plot_importance(feature_importance_df_, out_dir):
 
 
 def kfold_lightgbm(train_df, test_df, num_folds, out_dir_name, stratified=False, debug=False):
-    print("Starting LightGBM. Train shape: {}, test shape: {}".format(train_df.shape, test_df.shape))
-
     # Cross validation model
     if stratified:
         folds = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=326)
@@ -62,12 +64,13 @@ def kfold_lightgbm(train_df, test_df, num_folds, out_dir_name, stratified=False,
     sub_preds = np.zeros(test_df.shape[0])
     feature_importance_df = pd.DataFrame()
     feats = [f for f in train_df.columns if f not in FEATS_EXCLUDED]
-    print(f"feats: {feats}")
-
+    print(f"feats: {len(feats)}\n{feats}")
+    print(f"Starting LightGBM.\nTrain shape: {train_df[feats].shape}, {train_df['target'].shape}\nTest shape: {test_df[feats].shape}, {test_df['target'].shape}")
     # k-fold
     for n_fold, (train_idx, valid_idx) in enumerate(folds.split(train_df[feats], train_df['outliers'])):
         train_x, train_y = train_df[feats].iloc[train_idx], train_df['target'].iloc[train_idx]
         valid_x, valid_y = train_df[feats].iloc[valid_idx], train_df['target'].iloc[valid_idx]
+
 
         # set data structure
         lgb_train = lgb.Dataset(train_x,
@@ -161,7 +164,7 @@ def main(debug=False):
         gc.collect()
 
     with timer("Run LightGBM with kfold"):
-        kfold_lightgbm(train_df, test_df, out_dir_name="20190221_0012_stratified_5fold_gbdt", num_folds=5, stratified=True, debug=debug)
+        kfold_lightgbm(train_df, test_df, out_dir_name="20190223_0015_add_features", num_folds=11, stratified=False, debug=debug)
 
 
 if __name__ == "__main__":
