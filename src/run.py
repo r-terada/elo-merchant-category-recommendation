@@ -164,7 +164,7 @@ def main(debug=False):
         gc.collect()
 
     with timer("Run LightGBM with kfold"):
-        kfold_lightgbm(train_df, test_df, out_dir_name="20190223_0015_add_features", num_folds=11, stratified=False, debug=debug)
+        kfold_lightgbm(train_df, test_df, out_dir_name="20190223_0017_add_category_agg", num_folds=11, stratified=False, debug=debug)
 
 
 if __name__ == "__main__":

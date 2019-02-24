@@ -12,9 +12,14 @@ if not os.path.exists(cache_dir):
 mem = memory.Memory(location=cache_dir, verbose=1)
 
 
-def one_hot_encoder(df, nan_as_category=True):
+def one_hot_encoder(df, nan_as_category=True, not_ohe_cols=None):
     original_columns = list(df.columns)
-    categorical_columns = [col for col in df.columns if df[col].dtype == 'object']
+    if not_ohe_cols is None:
+        not_ohe_cols = []
+    categorical_columns = [col for col in df.columns if df[col].dtype == 'object' and col not in not_ohe_cols]
+    print(f"[one_hot_encoder]: encode these columns {categorical_columns}")
+    # for c in categorical_columns:
+        # print(f"{c} has {df[c].nunique()} unique values")
     df = pd.get_dummies(df, columns=categorical_columns, dummy_na=nan_as_category)
     new_columns = [c for c in df.columns if c not in original_columns]
     return df, new_columns
@@ -122,12 +127,15 @@ def train_test(num_rows=None):
     return df
 
 # preprocessing historical transactions
+@mem.cache
+def read_historical_transactions(num_rows):
+    return pd.read_csv('../data/input/historical_transactions.csv.zip', nrows=num_rows)
 
 
 @mem.cache
 def historical_transactions(num_rows=None):
     # load csv
-    hist_df = pd.read_csv('../data/input/historical_transactions.csv.zip', nrows=num_rows)
+    hist_df = read_historical_transactions(num_rows)
 
     # fillna
     hist_df['category_2'].fillna(1.0, inplace=True)
@@ -245,13 +253,15 @@ def historical_transactions(num_rows=None):
     return hist_df
 
 # preprocessing new_merchant_transactions
+@mem.cache
+def read_new_merchant_transactions(num_rows):
+    return pd.read_csv('../data/input/new_merchant_transactions.csv.zip', nrows=num_rows)
 
 
 @mem.cache
 def new_merchant_transactions(num_rows=None):
     # load csv
-    new_merchant_df = pd.read_csv('../data/input/new_merchant_transactions.csv.zip', nrows=num_rows)
-
+    new_merchant_df = read_new_merchant_transactions(num_rows)
     # fillna
     new_merchant_df['category_2'].fillna(1.0, inplace=True)
     new_merchant_df['category_3'].fillna('A', inplace=True)

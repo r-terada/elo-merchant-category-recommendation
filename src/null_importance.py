@@ -177,19 +177,19 @@ def main():
         os.makedirs("../data/misc")
 
     with timer("calc actual importance"):
-        if os.path.exists("../data/misc/actual_imp_df.pkl"):
-            actual_imp_df = pd.read_pickle("../data/misc/actual_imp_df.pkl")
+        if os.path.exists("../data/misc_2/actual_imp_df.pkl"):
+            actual_imp_df = pd.read_pickle("../data/misc_2/actual_imp_df.pkl")
         else:
             actual_imp_df = get_feature_importances(data=data, shuffle=False)
-            actual_imp_df.to_pickle("../data/misc/actual_imp_df.pkl")
+            actual_imp_df.to_pickle("../data/misc_2/actual_imp_df.pkl")
 
     print(actual_imp_df.head())
 
     with timer("calc null importance"):
         nb_runs = 100
 
-        if os.path.exists(f"../data/misc/null_imp_df_run{nb_runs}time.pkl"):
-            null_imp_df = pd.read_pickle(f"../data/misc/null_imp_df_run{nb_runs}time.pkl")
+        if os.path.exists(f"../data/misc_2/null_imp_df_run{nb_runs}time.pkl"):
+            null_imp_df = pd.read_pickle(f"../data/misc_2/null_imp_df_run{nb_runs}time.pkl")
         else:
             null_imp_df = pd.DataFrame()
             for i in range(nb_runs):
@@ -203,13 +203,13 @@ def main():
                 spent = (time.time() - start) / 60
                 dsp = '\rDone with %4d of %4d (Spent %5.1f min)' % (i + 1, nb_runs, spent)
                 print(dsp, end='', flush=True)
-            null_imp_df.to_pickle(f"../data/misc/null_imp_df_run{nb_runs}time.pkl")
+            null_imp_df.to_pickle(f"../data/misc_2/null_imp_df_run{nb_runs}time.pkl")
 
     print(null_imp_df.head())
 
     with timer('score features'):
-        if os.path.exists("../data/misc/feature_scores_df.pkl"):
-            scores_df = pd.read_pickle("../data/misc/feature_scores_df.pkl")
+        if os.path.exists("../data/misc_2/feature_scores_df.pkl"):
+            scores_df = pd.read_pickle("../data/misc_2/feature_scores_df.pkl")
         else:
             feature_scores = []
             for _f in actual_imp_df['feature'].unique():
@@ -222,11 +222,11 @@ def main():
                 feature_scores.append((_f, split_score, gain_score))
 
             scores_df = pd.DataFrame(feature_scores, columns=['feature', 'split_score', 'gain_score'])
-            scores_df.to_pickle("../data/misc/feature_scores_df.pkl")
+            scores_df.to_pickle(_2"../data/misc/feature_scores_df.pkl")
 
     with timer('calc correlation'):
-        if os.path.exists("../data/misc/corr_scores_df.pkl"):
-            corr_scores_df = pd.read_pickle("../data/misc/corr_scores_df.pkl")
+        if os.path.exists("../data/misc_2/corr_scores_df.pkl"):
+            corr_scores_df = pd.read_pickle("../data/misc_2/corr_scores_df.pkl")
         else:
             correlation_scores = []
             for _f in actual_imp_df['feature'].unique():
@@ -239,14 +239,14 @@ def main():
                 correlation_scores.append((_f, split_score, gain_score))
 
             corr_scores_df = pd.DataFrame(correlation_scores, columns=['feature', 'split_score', 'gain_score'])
-            corr_scores_df.to_pickle("../data/misc/corr_scores_df.pkl")
+            corr_scores_df.to_pickle("../data/misc_2/corr_scores_df.pkl")
 
     with timer('score feature removal by corr_scores'):
-        # for threshold in [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 99][::-1]:
-        #     with open(f"../data/misc/split_corr_under_threshold_{threshold}.txt", "w") as fp:
-        #         print([_f for _f, _score, _ in corr_scores_df.values if _score < threshold], file=fp)
-        #     with open(f"../data/misc/gain_corr_under_threshold_{threshold}.txt", "w") as fp:
-        #         print([_f for _f, _, _score in corr_scores_df.values if _score < threshold], file=fp)
+        for threshold in [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 99][::-1]:
+            with open(f"../data/misc_2/split_corr_under_threshold_{threshold}.txt", "w") as fp:
+                print([_f for _f, _score, _ in corr_scores_df.values if _score < threshold], file=fp)
+            with open(f"../data/misc_2/gain_corr_under_threshold_{threshold}.txt", "w") as fp:
+                print([_f for _f, _, _score in corr_scores_df.values if _score < threshold], file=fp)
 
         for threshold in [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 99][::-1]:
             split_feats = [_f for _f, _score, _ in corr_scores_df.values if _score >= threshold]
