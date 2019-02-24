@@ -12,6 +12,16 @@ if not os.path.exists(cache_dir):
 mem = memory.Memory(location=cache_dir, verbose=1)
 
 
+with open("../data/misc/split_corr_under_threshold_99.txt", "r") as fp:
+    line = fp.read()
+    features_to_be_excluded = eval(line)
+
+FEATS_EXCLUDED = ['first_active_month', 'target', 'card_id', 'outliers',
+                  'hist_purchase_date_max', 'hist_purchase_date_min', 'hist_card_id_size',
+                  'new_purchase_date_max', 'new_purchase_date_min', 'new_card_id_size',
+                  'OOF_PRED', 'month_0'] + features_to_be_excluded
+
+
 def one_hot_encoder(df, nan_as_category=True, not_ohe_cols=None):
     original_columns = list(df.columns)
     if not_ohe_cols is None:

@@ -14,20 +14,11 @@ from pandas.core.common import SettingWithCopyWarning
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import KFold, StratifiedKFold
 
-from features import train_test, historical_transactions, new_merchant_transactions, additional_features
+from features import train_test, historical_transactions, new_merchant_transactions, additional_features, FEATS_EXCLUDED
 
 
 warnings.simplefilter(action='ignore', category=SettingWithCopyWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
-
-with open("../data/misc/split_corr_under_threshold_99.txt", "r") as fp:
-    line = fp.read()
-    features_to_be_excluded = eval(line)
-
-FEATS_EXCLUDED = ['first_active_month', 'target', 'card_id', 'outliers',
-                  'hist_purchase_date_max', 'hist_purchase_date_min', 'hist_card_id_size',
-                  'new_purchase_date_max', 'new_purchase_date_min', 'new_card_id_size',
-                  'OOF_PRED', 'month_0'] #  + features_to_be_excluded
 
 
 @contextmanager
