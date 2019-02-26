@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from pandas.core.common import SettingWithCopyWarning
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import KFold, StratifiedKFold
+from xgboost import XGBRegressor
 
 from features import train_test, historical_transactions, new_merchant_transactions, additional_features, FEATS_EXCLUDED
 
@@ -43,7 +44,7 @@ def plot_importance(feature_importance_df_, out_dir):
     plt.savefig(os.path.join(out_dir, 'lgbm_importances.png'))
 
 
-def kfold_lightgbm(train_df, test_df, num_folds, out_dir_name, stratified=False, debug=False):
+def kfold_training(train_func, train_df, test_df, out_dir_name, num_folds, stratified=False, debug=False):
     # Cross validation model
     if stratified:
         folds = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=326)
@@ -56,13 +57,93 @@ def kfold_lightgbm(train_df, test_df, num_folds, out_dir_name, stratified=False,
     feature_importance_df = pd.DataFrame()
     feats = [f for f in train_df.columns if f not in FEATS_EXCLUDED]
     print(f"feats: {len(feats)}\n{feats}")
-    print(f"Starting LightGBM.\nTrain shape: {train_df[feats].shape}, {train_df['target'].shape}\nTest shape: {test_df[feats].shape}, {test_df['target'].shape}")
+    print(f"Start Training.\nTrain shape: {train_df[feats].shape}, {train_df['target'].shape}\nTest shape: {test_df[feats].shape}, {test_df['target'].shape}")
+
     # k-fold
     for n_fold, (train_idx, valid_idx) in enumerate(folds.split(train_df[feats], train_df['outliers'])):
         train_x, train_y = train_df[feats].iloc[train_idx], train_df['target'].iloc[train_idx]
         valid_x, valid_y = train_df[feats].iloc[valid_idx], train_df['target'].iloc[valid_idx]
 
+        result = train_func(train_x, train_y, valid_x, valid_y, test_df[feats], feats, n_fold)
+        oof_preds[valid_idx] = result["oof_preds"]
+        sub_preds += result["sub_preds"] / folds.n_splits
+        print('Fold %2d RMSE : %.6f' % (n_fold + 1, rmse(valid_y, oof_preds[valid_idx])))
 
+        if "feature_importance_df" in result:
+            feature_importance_df = pd.concat(
+                [feature_importance_df, result["feature_importance_df"]],
+                axis=0
+            )
+
+    score = rmse(train_df['target'], oof_preds)
+    print(f"==== ALL RMSE: {score} ====")
+    out_dir_base = "../data/output"
+    out_dir = os.path.join(out_dir_base, f"{out_dir_name}_{score}")
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+
+    if len(feature_importance_df) > 0:
+        plot_importance(feature_importance_df, out_dir)
+        feature_importance_df[["feature", "importance"]].groupby("feature").mean().sort_values(by="importance", ascending=False).to_csv(os.path.join(out_dir, f"faeture_importance.csv"), index=False)
+
+    oof_df = train_df.copy().reset_index()
+    oof_df['target'] = oof_preds
+    oof_df[['card_id', 'target']].to_csv(os.path.join(out_dir, f"oof.csv"), index=False)
+
+    submission = test_df.copy().reset_index()
+    submission['target'] = sub_preds
+    submission[['card_id', 'target']].to_csv(os.path.join(out_dir, f"submission.csv"), index=False)
+
+
+def kfold_xgboost(train_df, test_df, out_dir_name, num_folds, stratified=False, debug=False):
+    kfold_training(train_xgboost, train_df, test_df, out_dir_name, num_folds, stratified, debug)
+
+
+def train_xgboost(train_x, train_y, valid_x, valid_y, test_x, feats, n_fold, stratified=False, debug=False):
+    params = {
+        "n_jobs": -1,
+        "n_estimators": 10000,
+        "learning_rate": 0.01,
+        "max_depth": 7,
+        "num_leaves": 63,
+        'subsample': 0.9855232997390695,
+        "colsample_bytree": 0.5665320670155495,
+        "reg_alpha": 9.677537745007898,
+        "reg_lambda": 8.2532317400459,
+        "gamma": 9.820197773625843,
+        "min_child_weight": 40,
+        "seed": 131,
+        "silent": True,
+        "tree_method": "approx"
+    }
+
+    fit_params = {
+        "eval_metric": "rmse",
+        "verbose": 100,
+        "early_stopping_rounds": 200
+    }
+
+    clf = XGBRegressor(**params)
+    clf.fit(train_x, train_y, eval_set=[(valid_x, valid_y)], **fit_params)
+    result = {}
+
+    result["oof_preds"] = clf.predict(valid_x)
+    result["sub_preds"] = clf.predict(test_x)
+
+    fold_importance_df = pd.DataFrame()
+    fold_importance_df["feature"] = feats
+    fold_importance_df["importance"] = np.log1p(clf.feature_importances_)
+    fold_importance_df["fold"] = n_fold + 1
+    result["feature_importance_df"] = fold_importance_df
+
+    return result
+
+
+def kfold_lightgbm(train_df, test_df, out_dir_name, num_folds, stratified=False, debug=False):
+    kfold_training(train_lightgbm, train_df, test_df, out_dir_name, num_folds, stratified, debug)
+
+
+def train_lightgbm(train_x, train_y, valid_x, valid_y, test_x, feats, n_fold, stratified=False, debug=False):
         # set data structure
         lgb_train = lgb.Dataset(train_x,
                                 label=train_y,
@@ -106,35 +187,18 @@ def kfold_lightgbm(train_df, test_df, num_folds, out_dir_name, stratified=False,
             verbose_eval=100
         )
 
-        oof_preds[valid_idx] = reg.predict(valid_x, num_iteration=reg.best_iteration)
-        sub_preds += reg.predict(test_df[feats], num_iteration=reg.best_iteration) / folds.n_splits
+        result = {}
+
+        result["oof_preds"] = reg.predict(valid_x, num_iteration=reg.best_iteration)
+        result["sub_preds"] = reg.predict(test_x, num_iteration=reg.best_iteration)
 
         fold_importance_df = pd.DataFrame()
         fold_importance_df["feature"] = feats
         fold_importance_df["importance"] = np.log1p(reg.feature_importance(importance_type='gain', iteration=reg.best_iteration))
         fold_importance_df["fold"] = n_fold + 1
-        feature_importance_df = pd.concat([feature_importance_df, fold_importance_df], axis=0)
-        print('Fold %2d RMSE : %.6f' % (n_fold + 1, rmse(valid_y, oof_preds[valid_idx])))
-        del reg, train_x, train_y, valid_x, valid_y
-        gc.collect()
+        result["feature_importance_df"] = fold_importance_df
 
-    score = rmse(train_df['target'], oof_preds)
-    print(f"==== ALL RMSE: {score} ====")
-    out_dir_base = "../data/output"
-    out_dir = os.path.join(out_dir_base, f"{out_dir_name}_{score}")
-    if not os.path.exists(out_dir):
-        os.makedirs(out_dir)
-
-    plot_importance(feature_importance_df, out_dir)
-    feature_importance_df[["feature", "importance"]].groupby("feature").mean().sort_values(by="importance", ascending=False).to_csv(os.path.join(out_dir, f"faeture_importance.csv"), index=False)
-
-    oof_df = train_df.copy().reset_index()
-    oof_df['target'] = oof_preds
-    oof_df[['card_id', 'target']].to_csv(os.path.join(out_dir, f"oof.csv"), index=False)
-
-    submission = test_df.copy().reset_index()
-    submission['target'] = sub_preds
-    submission[['card_id', 'target']].to_csv(os.path.join(out_dir, f"submission.csv"), index=False)
+        return result
 
 
 def main(debug=False):
@@ -154,10 +218,14 @@ def main(debug=False):
         del df
         gc.collect()
 
-    with timer("Run LightGBM with kfold"):
-        kfold_lightgbm(train_df, test_df, out_dir_name="20190223_0017_add_category_agg", num_folds=11, stratified=False, debug=debug)
+    # with timer("Run LightGBM with kfold"):
+    #     kfold_lightgbm(train_df, test_df, out_dir_name="20190224_0019_add_mode_based_0014", num_folds=11, stratified=False, debug=debug)
+
+    with timer("Run XGBoost with kfold"):
+        kfold_xgboost(train_df, test_df, out_dir_name="20190224_0020_xgboost", num_folds=11, stratified=False, debug=debug)
 
 
 if __name__ == "__main__":
     with timer("Full model run"):
+        # main(debug=True)
         main(debug=False)

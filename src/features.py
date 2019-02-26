@@ -4,6 +4,7 @@ import datetime
 import numpy as np
 import pandas as pd
 from sklearn.externals.joblib import memory
+from scipy.stats import mode, kurtosis
 
 
 cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../data/cache')
@@ -136,6 +137,7 @@ def train_test(num_rows=None):
 
     return df
 
+
 # preprocessing historical transactions
 @mem.cache
 def read_historical_transactions(num_rows):
@@ -209,7 +211,7 @@ def historical_transactions(num_rows=None):
         aggs[col] = ['nunique']
 
     for col in col_seas:
-        aggs[col] = ['nunique', 'mean', 'min', 'max']
+        aggs[col] = ['nunique', 'mean', 'min', 'max', 'mode']
 
     aggs['purchase_amount'] = ['sum', 'max', 'min', 'mean', 'var', 'skew']
     aggs['installments'] = ['sum', 'max', 'mean', 'var', 'skew']
@@ -217,50 +219,53 @@ def historical_transactions(num_rows=None):
     aggs['month_lag'] = ['max', 'min', 'mean', 'var', 'skew']
     aggs['month_diff'] = ['max', 'min', 'mean', 'var', 'skew']
     aggs['authorized_flag'] = ['mean']
-    aggs['weekend'] = ['mean', 'count']  # overwrite
-    aggs['weekday'] = ['mean', 'count']  # overwrite
-    aggs['day'] = ['nunique', 'mean', 'max', 'min', 'count']  # overwrite
-    # aggs['category_1'] = ['mean']
-    # aggs['category_2'] = ['mean']
-    # aggs['category_3'] = ['mean']
-    aggs['category_1'] = ['count']
-    aggs['category_2'] = ['count']
-    aggs['category_3'] = ['count']
+    aggs['weekend'] = ['mean']  # overwrite
+    aggs['weekday'] = ['mean', 'mode']  # overwrite
+    # aggs['day'] = ['nunique', 'mean', 'max', 'min', 'mode']  # overwrite
+    aggs['category_1'] = ['mean', 'mode']
+    aggs['category_2'] = ['mean', 'mode']
+    aggs['category_3'] = ['mean', 'mode']
     aggs['card_id'] = ['size', 'count']
     aggs['price'] = ['sum', 'mean', 'max', 'min', 'var']
-    aggs['Christmas_Day_2017'] = ['mean', 'count']
-    aggs['Mothers_Day_2017'] = ['mean', 'count']
-    aggs['fathers_day_2017'] = ['mean', 'count']
-    aggs['Children_day_2017'] = ['mean', 'count']
-    aggs['Valentine_Day_2017'] = ['mean', 'count']
-    aggs['Black_Friday_2017'] = ['mean', 'count']
-    aggs['Mothers_Day_2018'] = ['mean', 'count']
+    aggs['Christmas_Day_2017'] = ['mean']
+    aggs['Mothers_Day_2017'] = ['mean']
+    aggs['fathers_day_2017'] = ['mean']
+    aggs['Children_day_2017'] = ['mean']
+    aggs['Valentine_Day_2017'] = ['mean']
+    aggs['Black_Friday_2017'] = ['mean']
+    aggs['Mothers_Day_2018'] = ['mean']
     aggs['duration'] = ['mean', 'min', 'max', 'var', 'skew']
     aggs['amount_month_ratio'] = ['mean', 'min', 'max', 'var', 'skew']
 
     for col in ['category_2', 'category_3']:
-        hist_df[col+'_mean'] = hist_df.groupby([col])['purchase_amount'].transform('mean')
-        hist_df[col+'_min'] = hist_df.groupby([col])['purchase_amount'].transform('min')
-        hist_df[col+'_max'] = hist_df.groupby([col])['purchase_amount'].transform('max')
-        hist_df[col+'_sum'] = hist_df.groupby([col])['purchase_amount'].transform('sum')
-        aggs[col+'_mean'] = ['mean']
+        hist_df[col+'_purchase_mean'] = hist_df.groupby([col])['purchase_amount'].transform('mean')
+        hist_df[col+'_purchase_min'] = hist_df.groupby([col])['purchase_amount'].transform('min')
+        hist_df[col+'_purchase_max'] = hist_df.groupby([col])['purchase_amount'].transform('max')
+        hist_df[col+'_purchase_sum'] = hist_df.groupby([col])['purchase_amount'].transform('sum')
+        aggs[col+'_purchase_mean'] = ['mean']
 
-    hist_df = hist_df.reset_index().groupby('card_id').agg(aggs)
+    # mode_keys = [k for k, v in aggs.items() if 'mode' in v]
+    other_aggs = {k: [a for a in v if a != 'mode'] for k, v in aggs.items()}
 
+    grouped = hist_df.reset_index().groupby('card_id')
+    agg_df = grouped.agg(other_aggs)
     # change column name
-    hist_df.columns = pd.Index([e[0] + "_" + e[1] for e in hist_df.columns.tolist()])
-    hist_df.columns = ['hist_' + c for c in hist_df.columns]
-
-    hist_df['hist_purchase_date_diff'] = (hist_df['hist_purchase_date_max']-hist_df['hist_purchase_date_min']).dt.days
-    hist_df['hist_purchase_date_average'] = hist_df['hist_purchase_date_diff']/hist_df['hist_card_id_size']
-    hist_df['hist_purchase_date_uptonow'] = (datetime.datetime(2019, 1, 20, 0, 0)-hist_df['hist_purchase_date_max']).dt.days
-    hist_df['hist_purchase_date_uptomin'] = (datetime.datetime(2019, 1, 20, 0, 0)-hist_df['hist_purchase_date_min']).dt.days
-    hist_df['week_end_ratio'] = hist_df['week_end_count'] / hist_df['day_count']
+    agg_df.columns = pd.Index([e[0] + "_" + e[1] for e in agg_df.columns.tolist()])
+    agg_df.columns = ['hist_' + c for c in agg_df.columns]
+    # for k in mode_keys:
+    #     mode_df = pd.DataFrame(grouped[k].apply(lambda x: mode(x)[0])).rename(columns={k: f"hist_{k}_mode"})
+    #     mode_df[f"hist_{k}_mode"] = mode_df[f"hist_{k}_mode"].astype(hist_df[k].dtype)
+    #     agg_df = agg_df.merge(mode_df, how='left', on='card_id')
+    agg_df['hist_purchase_date_diff'] = (agg_df['hist_purchase_date_max']-agg_df['hist_purchase_date_min']).dt.days
+    agg_df['hist_purchase_date_average'] = agg_df['hist_purchase_date_diff']/agg_df['hist_card_id_size']
+    agg_df['hist_purchase_date_uptonow'] = (datetime.datetime(2019, 1, 20, 0, 0)-agg_df['hist_purchase_date_max']).dt.days
+    agg_df['hist_purchase_date_uptomin'] = (datetime.datetime(2019, 1, 20, 0, 0)-agg_df['hist_purchase_date_min']).dt.days
 
     # reduce memory usage
-    hist_df = reduce_mem_usage(hist_df)
+    agg_df = reduce_mem_usage(agg_df)
 
-    return hist_df
+    return agg_df
+
 
 # preprocessing new_merchant_transactions
 @mem.cache
@@ -285,7 +290,7 @@ def new_merchant_transactions(num_rows=None):
     # Y/N to 1/0
     new_merchant_df['authorized_flag'] = new_merchant_df['authorized_flag'].map({'Y': 1, 'N': 0}).astype(int)
     new_merchant_df['category_1'] = new_merchant_df['category_1'].map({'Y': 1, 'N': 0}).astype(int)
-    new_merchant_df['category_3'] = new_merchant_df['category_3'].map({'A': 0, 'B': 1, 'C': 2}).astype(int)
+    new_merchant_df['category_3'] = new_merchant_df['category_3'].map({'A': 0, 'B': 1, 'C': 2})
 
     # datetime features
     new_merchant_df['purchase_date'] = pd.to_datetime(new_merchant_df['purchase_date'])
@@ -327,7 +332,7 @@ def new_merchant_transactions(num_rows=None):
         aggs[col] = ['nunique']
 
     for col in col_seas:
-        aggs[col] = ['nunique', 'mean', 'min', 'max']
+        aggs[col] = ['nunique', 'mean', 'min', 'max', 'mode']
 
     aggs['purchase_amount'] = ['sum', 'max', 'min', 'mean', 'var', 'skew']
     aggs['installments'] = ['sum', 'max', 'mean', 'var', 'skew']
@@ -335,11 +340,12 @@ def new_merchant_transactions(num_rows=None):
     aggs['month_lag'] = ['max', 'min', 'mean', 'var', 'skew']
     aggs['month_diff'] = ['mean', 'var', 'skew']
     aggs['weekend'] = ['mean']
-    aggs['month'] = ['mean', 'min', 'max']
-    aggs['weekday'] = ['mean', 'min', 'max']
-    aggs['category_1'] = ['mean']
-    aggs['category_2'] = ['mean']
-    aggs['category_3'] = ['mean']
+    aggs['weekday'] = ['mean', 'mode']  # overwrite
+    # aggs['month'] = ['mean', 'min', 'max']
+    # aggs['weekday'] = ['mean', 'min', 'max']
+    aggs['category_1'] = ['mean', 'mode']
+    aggs['category_2'] = ['mean', 'mode']
+    aggs['category_3'] = ['mean', 'mode']
     aggs['card_id'] = ['size', 'count']
     aggs['price'] = ['mean', 'max', 'min', 'var']
     aggs['Christmas_Day_2017'] = ['mean']
@@ -350,27 +356,33 @@ def new_merchant_transactions(num_rows=None):
     aggs['amount_month_ratio'] = ['mean', 'min', 'max', 'var', 'skew']
 
     for col in ['category_2', 'category_3']:
-        new_merchant_df[col+'_mean'] = new_merchant_df.groupby([col])['purchase_amount'].transform('mean')
-        new_merchant_df[col+'_min'] = new_merchant_df.groupby([col])['purchase_amount'].transform('min')
-        new_merchant_df[col+'_max'] = new_merchant_df.groupby([col])['purchase_amount'].transform('max')
-        new_merchant_df[col+'_sum'] = new_merchant_df.groupby([col])['purchase_amount'].transform('sum')
-        aggs[col+'_mean'] = ['mean']
+        new_merchant_df[col+'_purchase_mean'] = new_merchant_df.groupby([col])['purchase_amount'].transform('mean')
+        new_merchant_df[col+'_purchase_min'] = new_merchant_df.groupby([col])['purchase_amount'].transform('min')
+        new_merchant_df[col+'_purchase_max'] = new_merchant_df.groupby([col])['purchase_amount'].transform('max')
+        new_merchant_df[col+'_purchase_sum'] = new_merchant_df.groupby([col])['purchase_amount'].transform('sum')
+        aggs[col+'_purchase_mean'] = ['mean']
 
-    new_merchant_df = new_merchant_df.reset_index().groupby('card_id').agg(aggs)
+    # mode_keys = [k for k, v in aggs.items() if 'mode' in v]
+    other_aggs = {k: [a for a in v if a != 'mode'] for k, v in aggs.items()}
 
+    grouped = new_merchant_df.reset_index().groupby('card_id')
+    agg_df = grouped.agg(other_aggs)
     # change column name
-    new_merchant_df.columns = pd.Index([e[0] + "_" + e[1] for e in new_merchant_df.columns.tolist()])
-    new_merchant_df.columns = ['new_' + c for c in new_merchant_df.columns]
-
-    new_merchant_df['new_purchase_date_diff'] = (new_merchant_df['new_purchase_date_max']-new_merchant_df['new_purchase_date_min']).dt.days
-    new_merchant_df['new_purchase_date_average'] = new_merchant_df['new_purchase_date_diff']/new_merchant_df['new_card_id_size']
-    new_merchant_df['new_purchase_date_uptonow'] = (datetime.datetime(2019, 1, 20, 0, 0)-new_merchant_df['new_purchase_date_max']).dt.days
-    new_merchant_df['new_purchase_date_uptomin'] = (datetime.datetime(2019, 1, 20, 0, 0)-new_merchant_df['new_purchase_date_min']).dt.days
+    agg_df.columns = pd.Index([e[0] + "_" + e[1] for e in agg_df.columns.tolist()])
+    agg_df.columns = ['new_' + c for c in agg_df.columns]
+    # for k in mode_keys:
+    #     mode_df = pd.DataFrame(grouped[k].apply(lambda x: mode(x)[0])).rename(columns={k: f"new_{k}_mode"})
+    #     mode_df[f"new_{k}_mode"] = mode_df[f"new_{k}_mode"].astype(new_merchant_df[k].dtype)
+    #     agg_df = agg_df.merge(mode_df, how='left', on='card_id')
+    agg_df['new_purchase_date_diff'] = (agg_df['new_purchase_date_max']-agg_df['new_purchase_date_min']).dt.days
+    agg_df['new_purchase_date_average'] = agg_df['new_purchase_date_diff']/agg_df['new_card_id_size']
+    agg_df['new_purchase_date_uptonow'] = (datetime.datetime(2019, 1, 20, 0, 0)-agg_df['new_purchase_date_max']).dt.days
+    agg_df['new_purchase_date_uptomin'] = (datetime.datetime(2019, 1, 20, 0, 0)-agg_df['new_purchase_date_min']).dt.days
 
     # reduce memory usage
-    new_merchant_df = reduce_mem_usage(new_merchant_df)
+    agg_df = reduce_mem_usage(agg_df)
 
-    return new_merchant_df
+    return agg_df
 
 
 # additional features

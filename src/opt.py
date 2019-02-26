@@ -1,6 +1,7 @@
 import datetime
 import gc
 import json
+import time
 import lightgbm as lgb
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,16 +17,11 @@ from pandas.core.common import SettingWithCopyWarning
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import KFold, StratifiedKFold
 
-from features import train_test, historical_transactions, new_merchant_transactions, additional_features
+from features import train_test, historical_transactions, new_merchant_transactions, additional_features, FEATS_EXCLUDED
 
 
 warnings.simplefilter(action='ignore', category=SettingWithCopyWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
-
-FEATS_EXCLUDED = ['first_active_month', 'target', 'card_id', 'outliers',
-                  'hist_purchase_date_max', 'hist_purchase_date_min', 'hist_card_id_size',
-                  'new_purchase_date_max', 'new_purchase_date_min', 'new_card_id_size',
-                  'OOF_PRED', 'month_0']
 
 
 @contextmanager
@@ -74,7 +70,7 @@ def opt(train_df, test_df, num_folds, stratified=False, debug=False):
     }
 
     opt_idx = 0
-    out_dir_base = "../data/hyperopt_output_gbdt"
+    out_dir_base = "../data/output/hyperopt_gbdt"
 
     def objective(opt_params):
         nonlocal opt_idx
@@ -84,6 +80,7 @@ def opt(train_df, test_df, num_folds, stratified=False, debug=False):
         sub_preds = np.zeros(test_df.shape[0])
         feats = [f for f in train_df.columns if f not in FEATS_EXCLUDED]
 
+        st_time = time.time()
         # k-fold
         for n_fold, (train_idx, valid_idx) in enumerate(folds.split(train_df[feats], train_df['outliers'])):
             train_x, train_y = train_df[feats].iloc[train_idx], train_df['target'].iloc[train_idx]
@@ -139,7 +136,7 @@ def opt(train_df, test_df, num_folds, stratified=False, debug=False):
 
         score = rmse(train_df['target'], oof_preds)
 
-        print(f"==== [{opt_idx:0>4}] RMSE: {score} ====")
+        print(f"==== [{opt_idx:0>4}] RMSE: {score:.7f} - done in {st_time - time.time()} sec. ====")
         out_dir = os.path.join(out_dir_base, f"{opt_idx:0>4}_{score}")
         if not os.path.exists(out_dir):
             os.makedirs(out_dir)

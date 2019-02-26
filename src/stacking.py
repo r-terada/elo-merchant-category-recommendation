@@ -4,6 +4,7 @@ import glob
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
+from tqdm import tqdm
 from functools import reduce
 from sklearn.model_selection import KFold
 from sklearn.metrics import mean_squared_error
@@ -38,7 +39,7 @@ def stacking(train_df, test_df, save=True, verbose_fold=True):
             print('Fold %2d RMSE : %.6f' % (n_fold + 1, rmse(valid_y, oof_preds[valid_idx])))
 
     score = rmse(train_df['target'], oof_preds)
-    print(f'ALL RMSE: {score}')
+    # print(f'ALL RMSE: {score}')
 
     if save:
         out_dir = ("../data/output/stacking")
@@ -47,9 +48,9 @@ def stacking(train_df, test_df, save=True, verbose_fold=True):
 
         with open(os.path.join(out_dir, f"params_{score:.5f}.txt"), "w") as fp:
             print(",".join(feats), file=fp)
-        # oof_df = train_df.copy().reset_index()
-        # oof_df['target'] = oof_preds
-        # oof_df[['card_id', 'target']].to_csv(os.path.join(out_dir, f"oof.csv"), index=False)
+        oof_df = train_df.copy().reset_index()
+        oof_df['target'] = oof_preds
+        oof_df[['card_id', 'target']].to_csv(os.path.join(out_dir, f"oof_{score:.5f}.csv"), index=False)
         submission = test_df.copy().reset_index()
         submission['target'] = sub_preds
         submission[['card_id', 'target']].to_csv(os.path.join(out_dir, f"stacking_{score:.5f}.csv"), index=False)
@@ -59,8 +60,8 @@ def stacking(train_df, test_df, save=True, verbose_fold=True):
 
 def stack_all():
     train_df = pd.read_csv("../data/input/train.csv.zip")[["card_id", "target"]]
-    for fname in glob.glob("../data/hyperopt_output/*/oof.csv"):
-        df = pd.read_csv(fname).rename(columns={"target": os.path.dirname(fname).split("/")[-1].split("_")[0]})
+    for fname in glob.glob("../data/output/**/oof.csv", recursive=True):
+        df = pd.read_csv(fname).rename(columns={"target": os.path.dirname(fname).split("output")[-1]})
         train_df = train_df.merge(df, on="card_id")
         del df
         gc.collect()
@@ -68,8 +69,9 @@ def stack_all():
     print(train_df.head())
 
     test_df = pd.read_csv("../data/input/test.csv.zip")[["card_id"]]
-    for fname in glob.glob("../data/hyperopt_output/*/submission.csv"):
-        df = pd.read_csv(fname).rename(columns={"target": os.path.dirname(fname).split("/")[-1].split("_")[0]})
+    for fname in glob.glob("../data/output/**/oof.csv", recursive=True):
+        fname = fname.replace("oof", "submission")
+        df = pd.read_csv(fname).rename(columns={"target": os.path.dirname(fname).split("output")[-1]})
         test_df = test_df.merge(df, on="card_id")
         del df
         gc.collect()
@@ -82,14 +84,15 @@ def stack_all():
 def stack_bruteforce():
     train_base = pd.read_csv("../data/input/train.csv.zip")[["card_id", "target"]]
     train_dfs = {}
-    for fname in glob.glob("../data/hyperopt_output/*/oof.csv"):
-        model_idx = os.path.dirname(fname).split("/")[-1].split("_")[0]
+    for fname in glob.glob("../data/output/**/oof.csv", recursive=True):
+        model_idx = os.path.dirname(fname).split("output")[-1]
         train_dfs[model_idx] = pd.read_csv(fname).rename(columns={"target": model_idx})
 
     test_base = pd.read_csv("../data/input/test.csv.zip")[["card_id"]]
     test_dfs = {}
-    for fname in glob.glob("../data/hyperopt_output/*/submission.csv"):
-        model_idx = os.path.dirname(fname).split("/")[-1].split("_")[0]
+    for fname in glob.glob("../data/output/**/oof.csv", recursive=True):
+        fname = fname.replace("oof", "submission")
+        model_idx = os.path.dirname(fname).split("output")[-1]
         test_dfs[model_idx] = pd.read_csv(fname).rename(columns={"target": model_idx})
 
     best_score = 100000
@@ -99,8 +102,8 @@ def stack_bruteforce():
         best_feature = None
         print(f"current best_score: {best_score}")
         print(f"current features: {best_features}")
-        for n in feature_names:
-            print(f"test {n}")
+        for n in tqdm(feature_names, desc="test stacking", ncols=100):
+            # print(f"test {n}")
             train_f_list = [train_base] + [train_dfs[f] for f in best_features] + [train_dfs[n]]
             train_df = reduce(lambda l, r: l.merge(r, on="card_id"), train_f_list)
             test_f_list = [test_base] + [test_dfs[f] for f in best_features] + [test_dfs[n]]
