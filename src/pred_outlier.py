@@ -13,7 +13,7 @@ from tensorflow import keras
 from tensorflow.keras import layers, backend
 from contextlib import contextmanager
 from pandas.core.common import SettingWithCopyWarning
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import roc_auc_score, log_loss
 from sklearn.model_selection import KFold, StratifiedKFold
 from sklearn.preprocessing import MinMaxScaler
 from xgboost import XGBRegressor
@@ -30,26 +30,6 @@ def timer(title):
     t0 = time.time()
     yield
     print("{} - done in {:.0f}s".format(title, time.time() - t0))
-
-
-def rmse(y_true, y_pred):
-    return np.sqrt(mean_squared_error(y_true, y_pred))
-
-
-def custom_asymmetric_train(preds, train_data):
-
-    y_true = train_data.get_label()
-    residual = (y_true - preds).astype("float")
-    grad = -4 * residual ** 3
-    hess = 12 * residual ** 2
-    return grad, hess
-
-
-def custom_asymmetric_valid(preds, train_data):
-    y_true = train_data.get_label()
-    residual = (y_true - preds).astype("float")
-    loss = residual ** 4
-    return "custom_asymmetric_eval", np.mean(loss), False
 
 
 def plot_importance(feature_importance_df_, out_dir):
@@ -70,25 +50,25 @@ def kfold_training(train_func, train_df, test_df, out_dir_name, num_folds, strat
     else:
         folds = KFold(n_splits=num_folds, shuffle=True, random_state=326)
 
-    feats = [f for f in train_df.columns if f not in FEATS_EXCLUDED]
-    # feats = [f for f in train_df.columns if (f not in FEATS_EXCLUDED) and not (f.startswith("feature_"))]
-    # train_df = train_df[train_df["outliers"] == 0]
-    print(f"feats: {len(feats)}\n{feats}")
-    print(f"Start Training.\nTrain shape: {train_df[feats].shape}, {train_df['target'].shape}\nTest shape: {test_df[feats].shape}, {test_df['target'].shape}")
-
     # Create arrays and dataframes to store results
     oof_preds = np.zeros(train_df.shape[0])
     sub_preds = np.zeros(test_df.shape[0])
     feature_importance_df = pd.DataFrame()
+    # feats = [f for f in train_df.columns if f not in FEATS_EXCLUDED]
+    feats = [f for f in train_df.columns if (f not in FEATS_EXCLUDED) and not (f.startswith("feature_"))]
+    # train_df = train_df[train_df["outliers"] == 0]
+    print(f"feats: {len(feats)}\n{feats}")
+    print(f"Start Training.\nTrain shape: {train_df[feats].shape}, {train_df['outliers'].shape}\nTest shape: {test_df[feats].shape}, {test_df['outliers'].shape}")
+
     # k-fold
     for n_fold, (train_idx, valid_idx) in enumerate(folds.split(train_df[feats], train_df['outliers'])):
-        train_x, train_y = train_df[feats].iloc[train_idx], train_df['target'].iloc[train_idx]
-        valid_x, valid_y = train_df[feats].iloc[valid_idx], train_df['target'].iloc[valid_idx]
+        train_x, train_y = train_df[feats].iloc[train_idx], train_df['outliers'].iloc[train_idx]
+        valid_x, valid_y = train_df[feats].iloc[valid_idx], train_df['outliers'].iloc[valid_idx]
 
         result = train_func(train_x, train_y, valid_x, valid_y, test_df[feats], feats, n_fold)
         oof_preds[valid_idx] = result["oof_preds"]
         sub_preds += result["sub_preds"] / folds.n_splits
-        print('Fold %2d RMSE : %.6f' % (n_fold + 1, rmse(valid_y, oof_preds[valid_idx])))
+        print('Fold %2d LOGLOSS : %.6f' % (n_fold + 1, log_loss(valid_y, oof_preds[valid_idx])))
 
         if "feature_importance_df" in result:
             feature_importance_df = pd.concat(
@@ -96,8 +76,8 @@ def kfold_training(train_func, train_df, test_df, out_dir_name, num_folds, strat
                 axis=0
             )
 
-    score = rmse(train_df['target'], oof_preds)
-    print(f"==== ALL RMSE: {score} ====")
+    score = log_loss(train_df['outliers'], oof_preds)
+    print(f"==== ALL LOGLOSS: {score} ====")
     out_dir_base = "../data/output"
     out_dir = os.path.join(out_dir_base, f"{out_dir_name}_{score}")
     if not os.path.exists(out_dir):
@@ -230,8 +210,8 @@ def train_lightgbm(train_x, train_y, valid_x, valid_y, test_x, feats, n_fold, st
         'task': 'train',
         # 'boosting': 'goss',
         'boosting': 'gbdt',
-        'objective': 'regression',
-        'metric': 'rmse',
+        'objective': 'binary',
+        'metrics': ['binary_logloss', 'auc'],
         # 'objective': 'None',
         # 'metric': 'None',
         'learning_rate': 0.01,
@@ -295,15 +275,9 @@ def main(debug=False):
         del df
         gc.collect()
 
-    with timer("add outlier probability"):
-        train_probs = pd.read_csv("../data/output/20190226_0023_pred_outlier_0.04496550700806103/oof.csv").rename(columns={"target": "outlier_prob"})
-        test_probs = pd.read_csv("../data/output/20190226_0023_pred_outlier_0.04496550700806103/submission.csv").rename(columns={"target": "outlier_prob"})
-        train_df = pd.merge(train_df, train_probs, on="card_id", how="left")
-        test_df = pd.merge(test_df, test_probs, on="card_id", how="left")
-
-    _out_dir = "20190226_0025_outlier_prediction_as_feature"
+    _out_dir = "20190226_0023_pred_outlier"
     with timer("Run LightGBM with kfold"):
-        kfold_training(train_lightgbm, train_df, test_df, out_dir_name=_out_dir, num_folds=11, stratified=False, debug=debug)
+        kfold_training(train_lightgbm, train_df, test_df, out_dir_name=_out_dir, num_folds=5, stratified=True, debug=debug)
     # with timer("Run XGBoost with kfold"):
         # kfold_training(train_xgboost, train_df, test_df, out_dir_name=_out_dir, num_folds=11, stratified=False, debug=debug)
     # with timer("Run NN with kfold"):

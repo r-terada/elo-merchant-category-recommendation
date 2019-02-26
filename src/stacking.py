@@ -8,14 +8,14 @@ from tqdm import tqdm
 from functools import reduce
 from sklearn.model_selection import KFold
 from sklearn.metrics import mean_squared_error
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, BayesianRidge, Ridge, Lasso, ElasticNet, SGDRegressor, HuberRegressor
 
 
 def rmse(y_true, y_pred):
     return np.sqrt(mean_squared_error(y_true, y_pred))
 
 
-def stacking(train_df, test_df, save=True, verbose_fold=True):
+def stacking(train_df, test_df, save=True, verbose=True):
     folds = KFold(n_splits=11, shuffle=True, random_state=326)
 
     # Create arrays and dataframes to store results
@@ -29,17 +29,24 @@ def stacking(train_df, test_df, save=True, verbose_fold=True):
         train_x, train_y = train_df[feats].iloc[train_idx], train_df['target'].iloc[train_idx]
         valid_x, valid_y = train_df[feats].iloc[valid_idx], train_df['target'].iloc[valid_idx]
 
-        clf = LinearRegression(n_jobs=-1)
+        # clf = LinearRegression(n_jobs=-1)
+        clf = BayesianRidge()
+        # clf = Ridge()
+        # clf = Lasso()
+        # clf = ElasticNet()
+        # clf = SGDRegressor()
+        # clf = HuberRegressor()
         clf.fit(train_x.values, train_y.values)
 
         oof_preds[valid_idx] = clf.predict(valid_x.values)
         sub_preds += clf.predict(test_df[feats].values) / folds.n_splits
 
-        if verbose_fold:
+        if verbose:
             print('Fold %2d RMSE : %.6f' % (n_fold + 1, rmse(valid_y, oof_preds[valid_idx])))
 
     score = rmse(train_df['target'], oof_preds)
-    # print(f'ALL RMSE: {score}')
+    if verbose:
+        print(f'ALL RMSE: {score}')
 
     if save:
         out_dir = ("../data/output/stacking")
@@ -129,9 +136,53 @@ def stack_bruteforce():
     score = stacking(train_df, test_df, True, True)
 
 
+def stack_specified():
+    dir_names = [
+        "20190221_0004_features_sum_product_3.6478211935730918",
+        "hyperopt_goss/0018_3.6500527247789143",
+        "20190221_0010_stratified_3.6494040531741043",
+        "hyperopt_gbdt/0036_3.650217284097732",
+        "hyperopt_gbdt/0001_3.6533637171589413",
+        "hyperopt_goss/0025_3.65060454884021",
+        "hyperopt_goss/0019_3.6494077365567765",
+        "20190224_0020_xgboost_3.6503550670356386",
+        "20190223_0015_add_features_3.6605727017505107",
+        "hyperopt_gbdt/0022_3.6547204358846415",
+        "hyperopt_gbdt/0009_3.6556283525618425",
+        "hyperopt_gbdt/0016_3.651468530751637",
+        "hyperopt_goss/0008_3.653070140341593",
+        "hyperopt_goss/0029_3.6497186322103863",
+        "hyperopt_gbdt/0014_3.658375006600629",
+        "hyperopt_gbdt/0032_3.6525504112273146",
+        "hyperopt_gbdt/0015_3.6543947094545657",
+        "hyperopt_gbdt/0029_3.651514948215108",
+        "hyperopt_gbdt/0004_3.6537836461048685",
+        "20190226_0025_outlier_prediction_as_feature_3.654405778061392"
+    ]
+
+    train_base = pd.read_csv("../data/input/train.csv.zip")[["card_id", "target"]]
+    train_dfs = [train_base]
+    for dir_name in tqdm(dir_names, desc="read oofs", ncols=100):
+        fpath = os.path.join("../data/output/", dir_name, "oof.csv")
+        train_dfs.append(pd.read_csv(fpath).rename(columns={"target": dir_name}))
+
+    train_df = reduce(lambda l, r: l.merge(r, on="card_id"), train_dfs)
+
+    test_base = pd.read_csv("../data/input/test.csv.zip")[["card_id"]]
+    test_dfs = [test_base]
+    for dir_name in tqdm(dir_names, desc="read submissions", ncols=100):
+        fpath = os.path.join("../data/output/", dir_name, "submission.csv")
+        test_dfs.append(pd.read_csv(fpath).rename(columns={"target": dir_name}))
+
+    test_df = reduce(lambda l, r: l.merge(r, on="card_id"), test_dfs)
+
+    score = stacking(train_df, test_df, True, True)
+
+
 def main():
     # stack_all()
-    stack_bruteforce()
+    # stack_bruteforce()
+    stack_specified()
 
 
 if __name__ == '__main__':

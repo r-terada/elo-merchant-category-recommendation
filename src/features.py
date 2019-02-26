@@ -98,11 +98,12 @@ def train_test(num_rows=None):
     # datetime features
     df['quarter'] = df['first_active_month'].dt.quarter
     df['elapsed_time'] = (datetime.datetime(2019, 1, 20, 0, 0) - df['first_active_month']).dt.days
+    # df['first_year'] = df['first_active_month'].dt.year.astype("object")
     # df['first_month'] = df['first_active_month'].dt.month
     # df['first_day'] = df['first_active_month'].dt.day
     # df['first_hour'] = df['first_active_month'].dt.hour
     # df['first_weekofyear'] = df['first_active_month'].dt.weekofyear
-    # df['first_weekday'] = df['first_active_month'].dt.weekday
+    # df['first_weekday'] = df['first_active_month'].dt.weekday.astype("object")
     # df['first_weekend'] = (df['first_active_month'].dt.weekday >= 5).astype(int)
     df['feature_1'] = df['feature_1'].astype("object")
     df['feature_2'] = df['feature_2'].astype("object")
@@ -110,30 +111,32 @@ def train_test(num_rows=None):
     for f in ['feature_1', 'feature_2', 'feature_3']:
         order_label = df.groupby([f])['outliers'].mean()
         df[f"{f}_outlier_prob"] = df[f].map(order_label)
+        target_mean = df.groupby([f])['target'].mean()
+        df[f"{f}_target_mean"] = df[f].map(target_mean)
 
     # one hot encoding
     df, cols = one_hot_encoder(df, nan_as_category=False)
 
-    # df['days_feature1'] = df['elapsed_time'] * df['feature_1']
-    # df['days_feature2'] = df['elapsed_time'] * df['feature_2']
-    # df['days_feature3'] = df['elapsed_time'] * df['feature_3']
+    # df['days_feature1'] = df['elapsed_time'] * df['feature_1_outlier_prob']
+    # df['days_feature2'] = df['elapsed_time'] * df['feature_2_outlier_prob']
+    # df['days_feature3'] = df['elapsed_time'] * df['feature_3_outlier_prob']
 
-    # df['days_feature1_ratio'] = df['feature_1'] / df['elapsed_time']
-    # df['days_feature2_ratio'] = df['feature_2'] / df['elapsed_time']
-    # df['days_feature3_ratio'] = df['feature_3'] / df['elapsed_time']
+    # df['days_feature1_ratio'] = df['feature_1_outlier_prob'] / df['elapsed_time']
+    # df['days_feature2_ratio'] = df['feature_2_outlier_prob'] / df['elapsed_time']
+    # df['days_feature3_ratio'] = df['feature_3_outlier_prob'] / df['elapsed_time']
 
-    df['feature_outlier_prob_sum'] = df['feature_1_outlier_prob'] + df['feature_2_outlier_prob'] + df['feature_3_outlier_prob']
-    # df['feature1_plus_feature2'] = df['feature_1'] + df['feature_2']
-    # df['feature1_plus_feature3'] = df['feature_1'] + df['feature_3']
-    # df['feature2_plus_feature3'] = df['feature_2'] + df['feature_3']
-    df['feature_outlier_prob_product'] = df['feature_1_outlier_prob'] * df['feature_2_outlier_prob'] * df['feature_3_outlier_prob']
-    # df['feature1_mul_feature2'] = df['feature_1_outlier_prob'] * df['feature_2_outlier_prob']
-    # df['feature1_mul_feature3'] = df['feature_1_outlier_prob'] * df['feature_3_outlier_prob']
-    # df['feature2_mul_feature3'] = df['feature_2_outlier_prob'] * df['feature_3_outlier_prob']
-    df['feature_outlier_prob_mean'] = df['feature_outlier_prob_sum'] / 3
-    df['feature_outlier_prob_max'] = df[['feature_1_outlier_prob', 'feature_2_outlier_prob', 'feature_3_outlier_prob']].max(axis=1)
-    df['feature_outlier_prob_min'] = df[['feature_1_outlier_prob', 'feature_2_outlier_prob', 'feature_3_outlier_prob']].min(axis=1)
-    df['feature_outlier_prob_var'] = df[['feature_1_outlier_prob', 'feature_2_outlier_prob', 'feature_3_outlier_prob']].std(axis=1)
+    # df['feature_outlier_prob_sum'] = df['feature_1_outlier_prob'] + df['feature_2_outlier_prob'] + df['feature_3_outlier_prob']
+    # # df['feature1_plus_feature2'] = df['feature_1_outlier_prob'] + df['feature_2_outlier_prob']
+    # # df['feature1_plus_feature3'] = df['feature_1_outlier_prob'] + df['feature_3_outlier_prob']
+    # # df['feature2_plus_feature3'] = df['feature_2_outlier_prob'] + df['feature_3_outlier_prob']
+    # df['feature_outlier_prob_product'] = df['feature_1_outlier_prob'] * df['feature_2_outlier_prob'] * df['feature_3_outlier_prob']
+    # # df['feature1_mul_feature2'] = df['feature_1_outlier_prob'] * df['feature_2_outlier_prob']
+    # # df['feature1_mul_feature3'] = df['feature_1_outlier_prob'] * df['feature_3_outlier_prob']
+    # # df['feature2_mul_feature3'] = df['feature_2_outlier_prob'] * df['feature_3_outlier_prob']
+    # df['feature_outlier_prob_mean'] = df['feature_outlier_prob_sum'] / 3
+    # df['feature_outlier_prob_max'] = df[['feature_1_outlier_prob', 'feature_2_outlier_prob', 'feature_3_outlier_prob']].max(axis=1)
+    # df['feature_outlier_prob_min'] = df[['feature_1_outlier_prob', 'feature_2_outlier_prob', 'feature_3_outlier_prob']].min(axis=1)
+    # df['feature_outlier_prob_var'] = df[['feature_1_outlier_prob', 'feature_2_outlier_prob', 'feature_3_outlier_prob']].std(axis=1)
 
     return df
 
@@ -398,35 +401,37 @@ def additional_features(df):
     for f in date_features:
         df[f] = df[f].astype(np.int64) * 1e-9
 
-    df['card_id_total'] = df['new_card_id_size']+df['hist_card_id_size']
-    df['card_id_cnt_total'] = df['new_card_id_count']+df['hist_card_id_count']
-    df['card_id_cnt_ratio'] = df['new_card_id_count']/df['hist_card_id_count']
-    df['purchase_amount_total'] = df['new_purchase_amount_sum']+df['hist_purchase_amount_sum']
-    df['purchase_amount_mean'] = df['new_purchase_amount_mean']+df['hist_purchase_amount_mean']
-    df['purchase_amount_max'] = df['new_purchase_amount_max']+df['hist_purchase_amount_max']
-    df['purchase_amount_min'] = df['new_purchase_amount_min']+df['hist_purchase_amount_min']
-    df['purchase_amount_ratio'] = df['new_purchase_amount_sum']/df['hist_purchase_amount_sum']
-    df['month_diff_mean'] = df['new_month_diff_mean']+df['hist_month_diff_mean']
-    df['month_diff_ratio'] = df['new_month_diff_mean']/df['hist_month_diff_mean']
-    df['month_lag_mean'] = df['new_month_lag_mean']+df['hist_month_lag_mean']
-    df['month_lag_max'] = df['new_month_lag_max']+df['hist_month_lag_max']
-    df['month_lag_min'] = df['new_month_lag_min']+df['hist_month_lag_min']
-    df['category_1_mean'] = df['new_category_1_mean']+df['hist_category_1_mean']
-    df['installments_total'] = df['new_installments_sum']+df['hist_installments_sum']
-    df['installments_mean'] = df['new_installments_mean']+df['hist_installments_mean']
-    df['installments_max'] = df['new_installments_max']+df['hist_installments_max']
-    df['installments_ratio'] = df['new_installments_sum']/df['hist_installments_sum']
+    df['card_id_total'] = df['new_card_id_size'] + df['hist_card_id_size']
+    df['card_id_cnt_total'] = df['new_card_id_count'] + df['hist_card_id_count']
+    df['card_id_cnt_ratio'] = df['new_card_id_count'] / df['hist_card_id_count']
+    df['purchase_amount_total'] = df['new_purchase_amount_sum'] + df['hist_purchase_amount_sum']
+    df['purchase_amount_mean'] = df['new_purchase_amount_mean'] + df['hist_purchase_amount_mean']
+    df['purchase_amount_max'] = df['new_purchase_amount_max'] + df['hist_purchase_amount_max']
+    df['purchase_amount_min'] = df['new_purchase_amount_min'] + df['hist_purchase_amount_min']
+    df['purchase_amount_ratio'] = df['new_purchase_amount_sum'] / df['hist_purchase_amount_sum']
+    df['month_diff_mean'] = df['new_month_diff_mean'] + df['hist_month_diff_mean']
+    df['month_diff_ratio'] = df['new_month_diff_mean'] / df['hist_month_diff_mean']
+    df['month_lag_mean'] = df['new_month_lag_mean'] + df['hist_month_lag_mean']
+    df['month_lag_max'] = df['new_month_lag_max'] + df['hist_month_lag_max']
+    df['month_lag_min'] = df['new_month_lag_min'] + df['hist_month_lag_min']
+    df['category_1_mean'] = df['new_category_1_mean'] + df['hist_category_1_mean']
+    df['installments_total'] = df['new_installments_sum'] + df['hist_installments_sum']
+    df['installments_mean'] = df['new_installments_mean'] + df['hist_installments_mean']
+    df['installments_max'] = df['new_installments_max'] + df['hist_installments_max']
+    df['installments_ratio'] = df['new_installments_sum'] / df['hist_installments_sum']
     df['price_total'] = df['purchase_amount_total'] / df['installments_total']
     df['price_mean'] = df['purchase_amount_mean'] / df['installments_mean']
     df['price_max'] = df['purchase_amount_max'] / df['installments_max']
-    df['duration_mean'] = df['new_duration_mean']+df['hist_duration_mean']
-    df['duration_min'] = df['new_duration_min']+df['hist_duration_min']
-    df['duration_max'] = df['new_duration_max']+df['hist_duration_max']
-    df['amount_month_ratio_mean'] = df['new_amount_month_ratio_mean']+df['hist_amount_month_ratio_mean']
-    df['amount_month_ratio_min'] = df['new_amount_month_ratio_min']+df['hist_amount_month_ratio_min']
-    df['amount_month_ratio_max'] = df['new_amount_month_ratio_max']+df['hist_amount_month_ratio_max']
+    df['duration_mean'] = df['new_duration_mean'] + df['hist_duration_mean']
+    df['duration_min'] = df['new_duration_min'] + df['hist_duration_min']
+    df['duration_max'] = df['new_duration_max'] + df['hist_duration_max']
+    df['amount_month_ratio_mean'] = df['new_amount_month_ratio_mean'] + df['hist_amount_month_ratio_mean']
+    df['amount_month_ratio_min'] = df['new_amount_month_ratio_min'] + df['hist_amount_month_ratio_min']
+    df['amount_month_ratio_max'] = df['new_amount_month_ratio_max'] + df['hist_amount_month_ratio_max']
     df['new_CLV'] = df['new_card_id_count'] * df['new_purchase_amount_sum'] / df['new_month_diff_mean']
     df['hist_CLV'] = df['hist_card_id_count'] * df['hist_purchase_amount_sum'] / df['hist_month_diff_mean']
     df['CLV_ratio'] = df['new_CLV'] / df['hist_CLV']
+    # df['CLV_mean'] = (df['new_CLV'] + df['hist_CLV']) / 2
+    # df['CLV_prod'] = df['new_CLV'] * df['hist_CLV']
 
     return df
